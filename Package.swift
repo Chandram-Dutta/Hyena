@@ -12,7 +12,38 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "HyenaEngine"
+            name: "HyenaParser"
+        ),
+        .target(
+            name: "HyenaIRStore"
+        ),
+        .target(
+            name: "HyenaGraphBuilder",
+            dependencies: [
+                "HyenaIRStore"
+            ]
+        ),
+        .target(
+            name: "HyenaSignalEngine",
+            dependencies: [
+                "HyenaGraphBuilder"
+            ]
+        ),
+        .target(
+            name: "HyenaReporters",
+            dependencies: [
+                "HyenaSignalEngine"
+            ]
+        ),
+        .target(
+            name: "HyenaEngine",
+            dependencies: [
+                "HyenaParser",
+                "HyenaIRStore",
+                "HyenaGraphBuilder",
+                "HyenaSignalEngine",
+                "HyenaReporters",
+            ]
         ),
         .executableTarget(
             name: "HyenaCLI",
