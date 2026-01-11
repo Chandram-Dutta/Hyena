@@ -24,22 +24,23 @@ public struct HyenaEngine {
         print("Starting Hyena analysis for: \(path)")
 
         let parsedFiles = try runIngestion(at: path)
-        let ir = try buildIR(from: parsedFiles)
+        let ir = buildIR(from: parsedFiles)
         let graphs = try buildGraphs(from: ir)
         let signals = try runSignals(on: graphs)
-        try report(signals: signals)
+        try report(ir: ir, signals: signals)
 
         print("Analysis complete")
     }
 
-    private func runIngestion(at path: String) throws -> [String] {
+    private func runIngestion(at path: String) throws -> [ParsedFile] {
         print("Stage 1: Running ingestion...")
         return try parser.parse(at: path)
     }
 
-    private func buildIR(from parsedFiles: [String]) throws -> IRStore {
+    private func buildIR(from parsedFiles: [ParsedFile]) -> IRStore {
         print("Stage 2: Building IR...")
-        return try irStore.buildIR(from: parsedFiles)
+        let fileImports = parsedFiles.map { FileImports(path: $0.path, imports: $0.imports) }
+        return IRStore(fileImports: fileImports)
     }
 
     private func buildGraphs(from ir: IRStore) throws -> GraphResult {
@@ -52,8 +53,9 @@ public struct HyenaEngine {
         return try signalEngine.runSignals(on: graphs)
     }
 
-    private func report(signals: SignalResult) throws {
+    private func report(ir: IRStore, signals: SignalResult) throws {
         print("Stage 5: Reporting...")
-        try reporters.report(signals: signals)
+        reporters.reportImports(ir.fileImports)
+        reporters.reportSignals(signals)
     }
 }
