@@ -5,6 +5,16 @@ import HyenaParser
 import HyenaReporters
 import HyenaSignalEngine
 
+public struct ScanOptions {
+    public let verbose: Bool
+    public let quiet: Bool
+    
+    public init(verbose: Bool = false, quiet: Bool = false) {
+        self.verbose = verbose
+        self.quiet = quiet
+    }
+}
+
 public struct HyenaEngine {
     private let parser: HyenaParser
     private let irStore: HyenaIRStore
@@ -20,8 +30,15 @@ public struct HyenaEngine {
         self.reporters = HyenaReporters()
     }
 
-    public func scan(path: String, exportFormat: ExportFormat? = nil, outputPath: String? = nil) throws {
-        print("Starting Hyena analysis for: \(path)")
+    public func scan(
+        path: String,
+        exportFormat: ExportFormat? = nil,
+        outputPath: String? = nil,
+        options: ScanOptions = ScanOptions()
+    ) throws {
+        let startTime = Date()
+        
+        reporters.printHeader(path: path)
 
         let parsedFiles = try runIngestion(at: path)
         let ir = buildIR(from: parsedFiles)
@@ -31,10 +48,11 @@ public struct HyenaEngine {
         if let format = exportFormat {
             try export(ir: ir, graphs: graphs, signals: signals, format: format, outputPath: outputPath)
         } else {
-            report(ir: ir, signals: signals)
+            report(ir: ir, signals: signals, options: options)
         }
 
-        print("Analysis complete")
+        let duration = Date().timeIntervalSince(startTime)
+        reporters.printCompletion(duration: duration)
     }
     
     private func export(
@@ -44,24 +62,27 @@ public struct HyenaEngine {
         format: ExportFormat,
         outputPath: String?
     ) throws {
-        print("Stage 5: Exporting as \(format.rawValue)...")
+        reporters.printStage(5, of: 5, "Exporting as \(format.rawValue.uppercased())")
         let result = reporters.export(ir: ir, graphs: graphs, signals: signals, format: format)
         
         if let path = outputPath {
             try result.write(to: path)
-            print("Exported to: \(path)")
+            reporters.printStageComplete("Written to \(path)")
         } else {
+            print("")
             print(result.content)
         }
     }
 
     private func runIngestion(at path: String) throws -> [ParsedFile] {
-        print("Stage 1: Running ingestion...")
-        return try parser.parse(at: path)
+        reporters.printStage(1, of: 5, "Parsing Swift files")
+        let files = try parser.parse(at: path)
+        reporters.printStageComplete("Found \(files.count) files")
+        return files
     }
 
     private func buildIR(from parsedFiles: [ParsedFile]) -> IRStore {
-        print("Stage 2: Building IR...")
+        reporters.printStage(2, of: 5, "Building intermediate representation")
 
         let fileImports = parsedFiles.map { file in
             FileImports(
@@ -128,27 +149,43 @@ public struct HyenaEngine {
             }
         }
 
-        return IRStore(
+        let ir = IRStore(
             fileImports: fileImports,
             typeDeclarations: typeDeclarations,
             functionDeclarations: functionDeclarations,
             callSites: callSites
         )
+        
+        reporters.printStageComplete("\(typeDeclarations.count) types, \(functionDeclarations.count) functions")
+        return ir
     }
 
     private func buildGraphs(from ir: IRStore) throws -> GraphResult {
-        print("Stage 3: Building graphs...")
-        return try graphBuilder.buildGraphs(from: ir)
+        reporters.printStage(3, of: 5, "Building dependency graphs")
+        let result = try graphBuilder.buildGraphs(from: ir)
+        reporters.printStageComplete("File, inheritance, and call graphs ready")
+        return result
     }
 
     private func runSignals(on graphs: GraphResult) throws -> SignalResult {
-        print("Stage 4: Running signals...")
-        return try signalEngine.runSignals(on: graphs)
+        reporters.printStage(4, of: 5, "Analyzing for issues")
+        let result = try signalEngine.runSignals(on: graphs)
+        let issueCount = result.signals.count
+        if issueCount == 0 {
+            reporters.printStageComplete("No issues found")
+        } else {
+            reporters.printStageComplete("Found \(issueCount) potential issues")
+        }
+        return result
     }
 
-    private func report(ir: IRStore, signals: SignalResult) {
-        print("Stage 5: Reporting...")
-        reporters.reportImports(ir.fileImports)
+    private func report(ir: IRStore, signals: SignalResult, options: ScanOptions) {
+        reporters.printStage(5, of: 5, "Generating report")
+        
+        if options.verbose {
+            reporters.reportImports(ir.fileImports, verbose: true)
+        }
+        
         reporters.reportSignals(
             signals,
             fileCount: ir.fileImports.count,
