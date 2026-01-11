@@ -355,10 +355,12 @@ public enum Language: String, Codable, Sendable {
 public struct FileImports: Sendable {
     public let path: String
     public let imports: [ImportInfo]
+    public let isEntryPoint: Bool
 
-    public init(path: String, imports: [ImportInfo]) {
+    public init(path: String, imports: [ImportInfo], isEntryPoint: Bool = false) {
         self.path = path
         self.imports = imports
+        self.isEntryPoint = isEntryPoint
     }
 
     public var moduleNames: [String] {

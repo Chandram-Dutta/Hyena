@@ -68,7 +68,8 @@ public struct HyenaEngine {
                 path: file.path,
                 imports: file.imports.map { imp in
                     ImportInfo(moduleName: imp.moduleName, isTestable: imp.isTestable, line: imp.line)
-                }
+                },
+                isEntryPoint: file.hasMainAttribute
             )
         }
 
@@ -148,7 +149,12 @@ public struct HyenaEngine {
     private func report(ir: IRStore, signals: SignalResult) {
         print("Stage 5: Reporting...")
         reporters.reportImports(ir.fileImports)
-        reporters.reportSignals(signals)
+        reporters.reportSignals(
+            signals,
+            fileCount: ir.fileImports.count,
+            typeCount: ir.typeDeclarations.count,
+            functionCount: ir.functionDeclarations.count
+        )
     }
 }
 

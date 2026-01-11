@@ -23,11 +23,12 @@ public struct HyenaReporters {
         print("")
     }
 
-    public func reportSignals(_ signals: SignalResult) {
+    public func reportSignals(_ signals: SignalResult, fileCount: Int = 0, typeCount: Int = 0, functionCount: Int = 0) {
         print("--- Signals ---\n")
 
         if signals.signals.isEmpty {
             print("No signals detected.\n")
+            printSummary(fileCount: fileCount, typeCount: typeCount, functionCount: functionCount, signals: signals)
             return
         }
 
@@ -42,6 +43,18 @@ public struct HyenaReporters {
             }
             print("")
         }
+        
+        printSummary(fileCount: fileCount, typeCount: typeCount, functionCount: functionCount, signals: signals)
+    }
+    
+    private func printSummary(fileCount: Int, typeCount: Int, functionCount: Int, signals: SignalResult) {
+        let errorCount = signals.signals(withSeverity: .error).count
+        let warningCount = signals.signals(withSeverity: .warning).count
+        let infoCount = signals.signals(withSeverity: .info).count
+        
+        print("--- Summary ---")
+        print("\(fileCount) files, \(typeCount) types, \(functionCount) functions")
+        print("\(signals.signals.count) signals (\(errorCount) errors, \(warningCount) warnings, \(infoCount) info)\n")
     }
 
     private func severityIcon(_ severity: Severity) -> String {

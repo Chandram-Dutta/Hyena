@@ -10,19 +10,22 @@ public struct ParsedFile: Sendable {
     public let types: [ParsedType]
     public let functions: [ParsedFunction]
     public let callSites: [ParsedCallSite]
+    public let hasMainAttribute: Bool
 
     public init(
         path: String,
         imports: [ParsedImport] = [],
         types: [ParsedType] = [],
         functions: [ParsedFunction] = [],
-        callSites: [ParsedCallSite] = []
+        callSites: [ParsedCallSite] = [],
+        hasMainAttribute: Bool = false
     ) {
         self.path = path
         self.imports = imports
         self.types = types
         self.functions = functions
         self.callSites = callSites
+        self.hasMainAttribute = hasMainAttribute
     }
 
     public var importedModules: [String] {
@@ -203,7 +206,8 @@ public struct HyenaParser {
             imports: visitor.imports,
             types: visitor.types,
             functions: visitor.functions,
-            callSites: visitor.callSites
+            callSites: visitor.callSites,
+            hasMainAttribute: visitor.hasMainAttribute
         )
     }
 }
@@ -215,6 +219,7 @@ private final class FullSyntaxVisitor: SyntaxVisitor {
     var types: [ParsedType] = []
     var functions: [ParsedFunction] = []
     var callSites: [ParsedCallSite] = []
+    var hasMainAttribute: Bool = false
 
     private var typeStack: [String] = []
     private var functionStack: [String] = []
@@ -293,6 +298,10 @@ private final class FullSyntaxVisitor: SyntaxVisitor {
         let converter = SourceLocationConverter(fileName: "", tree: node.root)
         let startLoc = node.startLocation(converter: converter)
         let endLoc = node.endLocation(converter: converter)
+
+        if attributes.contains("main") {
+            hasMainAttribute = true
+        }
 
         types.append(ParsedType(
             name: name,

@@ -7,7 +7,11 @@ public struct HyenaSignalEngine {
     public func runSignals(on graphs: GraphResult) throws -> SignalResult {
         var signals: [Signal] = []
 
-        let deadFiles = findDeadFiles(in: graphs.fileDependencyGraph)
+        let deadFiles = findDeadFiles(
+            in: graphs.fileDependencyGraph,
+            types: graphs.inheritanceGraph,
+            callGraph: graphs.callGraph
+        )
         signals.append(contentsOf: deadFiles)
 
         let circularDeps = findCircularDependencies(in: graphs.fileDependencyGraph)
@@ -58,24 +62,49 @@ public struct HyenaSignalEngine {
         return SignalResult(signals: signals)
     }
 
-    private func findDeadFiles(in graph: FileDependencyGraph) -> [Signal] {
+    private func findDeadFiles(
+        in graph: FileDependencyGraph,
+        types: InheritanceGraph,
+        callGraph: CallGraph
+    ) -> [Signal] {
         var signals: [Signal] = []
 
         let importedModules = graph.allImportedModules
         let localModules = Set(graph.nodes.map { $0.moduleName })
+        
+        let typesByFile = Dictionary(grouping: types.nodes) { $0.filePath }
+        let functionsByFile = Dictionary(grouping: callGraph.nodes) { $0.filePath }
+        
+        let referencedTypes = Set(callGraph.edges.map { $0.callee })
+        let referencedFunctions = Set(callGraph.edges.filter { $0.isInternal }.map { $0.callee })
+        
+        let commandProtocols: Set<String> = ["ParsableCommand", "AsyncParsableCommand"]
 
         for node in graph.nodes {
+            if node.isEntryPoint { continue }
+            
             let isImportedByAnyone = importedModules.contains(node.moduleName)
             let isExternalImport = !localModules.contains(node.moduleName)
+            
+            let fileTypes = typesByFile[node.path] ?? []
+            let fileFunctions = functionsByFile[node.path] ?? []
+            
+            let hasReferencedType = fileTypes.contains { referencedTypes.contains($0.name) }
+            let hasReferencedFunction = fileFunctions.contains { referencedFunctions.contains($0.name) }
+            let isSubcommand = fileTypes.contains { type in
+                let inherited = types.edges.filter { $0.from == type.name }.map { $0.to }
+                return inherited.contains(where: { commandProtocols.contains($0) })
+            }
+            let isReferenced = hasReferencedType || hasReferencedFunction || isSubcommand
 
-            if !isImportedByAnyone && !isExternalImport {
+            if !isImportedByAnyone && !isExternalImport && !isReferenced {
                 let hasOutgoingImports = !graph.outgoingEdges(for: node.path).isEmpty
                 let severity: Severity = hasOutgoingImports ? .warning : .info
 
                 signals.append(Signal(
                     name: "dead-file",
                     severity: severity,
-                    message: "File '\(node.moduleName)' is not imported by any other file",
+                    message: "File '\(node.moduleName)' is not imported or referenced by any other file",
                     file: node.path
                 ))
             }
@@ -278,10 +307,11 @@ public struct HyenaSignalEngine {
         return hotFns.map { name, callCount in
             let node = graph.nodes.first { $0.name == name }
             let severity: Severity = callCount >= 10 ? .error : .warning
+            let fnName = node?.containingType.map { "\($0).\(name)" } ?? name
             return Signal(
                 name: "hot-function",
                 severity: severity,
-                message: "Function '\(name)' is called \(callCount) times - potential bottleneck",
+                message: "Function '\(fnName)' is called \(callCount) times - potential bottleneck",
                 file: node?.filePath
             )
         }
@@ -293,14 +323,18 @@ public struct HyenaSignalEngine {
             "main", "visit", "visitPost", "run", "hash", "encode", "decode"
         ]
         let ignoredPrefixes = ["init", "test", "setUp", "tearDown"]
+        let publicAccessLevels: Set<FunctionAccessibility> = [.public, .open]
         
         return unused.compactMap { fn in
             if ignoredNames.contains(fn.name) { return nil }
             if ignoredPrefixes.contains(where: { fn.name.hasPrefix($0) }) { return nil }
+            if publicAccessLevels.contains(fn.accessibility) { return nil }
+            
+            let fnName = fn.containingType.map { "\($0).\(fn.name)" } ?? fn.name
             return Signal(
                 name: "unused-function",
                 severity: .info,
-                message: "Function '\(fn.name)' is never called internally",
+                message: "Function '\(fnName)' is never called internally",
                 file: fn.filePath
             )
         }

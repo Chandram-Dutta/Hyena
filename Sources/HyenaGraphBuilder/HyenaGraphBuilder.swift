@@ -25,7 +25,11 @@ public struct HyenaGraphBuilder {
         let moduleToFile = buildModuleToFileMap(from: fileImports)
 
         for file in fileImports {
-            let node = FileNode(path: file.path, moduleName: extractModuleName(from: file.path))
+            let node = FileNode(
+                path: file.path,
+                moduleName: extractModuleName(from: file.path),
+                isEntryPoint: file.isEntryPoint
+            )
             nodes.append(node)
 
             for importedModule in file.moduleNames {
@@ -101,7 +105,8 @@ public struct HyenaGraphBuilder {
                 signature: fn.signature,
                 filePath: fn.filePath,
                 line: fn.line,
-                containingType: fn.containingType
+                containingType: fn.containingType,
+                accessibility: FunctionAccessibility(rawValue: fn.accessibility.rawValue) ?? .internal
             ))
         }
 
@@ -205,10 +210,12 @@ public struct FileDependencyGraph {
 public struct FileNode {
     public let path: String
     public let moduleName: String
+    public let isEntryPoint: Bool
 
-    public init(path: String, moduleName: String) {
+    public init(path: String, moduleName: String, isEntryPoint: Bool = false) {
         self.path = path
         self.moduleName = moduleName
+        self.isEntryPoint = isEntryPoint
     }
 }
 
@@ -347,14 +354,32 @@ public struct FunctionNode {
     public let filePath: String
     public let line: Int
     public let containingType: String?
+    public let accessibility: FunctionAccessibility
 
-    public init(name: String, signature: String, filePath: String, line: Int, containingType: String?) {
+    public init(
+        name: String,
+        signature: String,
+        filePath: String,
+        line: Int,
+        containingType: String?,
+        accessibility: FunctionAccessibility = .internal
+    ) {
         self.name = name
         self.signature = signature
         self.filePath = filePath
         self.line = line
         self.containingType = containingType
+        self.accessibility = accessibility
     }
+}
+
+public enum FunctionAccessibility: String {
+    case `public`
+    case `internal`
+    case `private`
+    case `fileprivate`
+    case `open`
+    case package
 }
 
 public struct CallEdge {
