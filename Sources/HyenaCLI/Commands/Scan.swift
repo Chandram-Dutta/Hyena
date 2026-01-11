@@ -1,30 +1,21 @@
 import ArgumentParser
 import Foundation
+import HyenaEngine
 
 struct Scan: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Scan for issues or analyze code"
+        abstract: "Scan a directory"
     )
 
     @Argument(help: "The path to scan")
-    var path: String = "."
-
-    @Flag(name: .shortAndLong, help: "Show verbose output")
-    var verbose: Bool = false
-
-    @Option(name: .shortAndLong, help: "Output format (text, json)")
-    var format: String = "text"
+    var path: String
 
     mutating func run() throws {
-        if verbose {
-            print("Running scan on: \(path)")
-            print("Output format: \(format)")
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw ValidationError("Path does not exist: \(path)")
         }
 
-        print("Scanning \(path)...")
-
-        // TODO: Implement actual scanning logic using HyenaEngine
-
-        print("Scan complete!")
+        let engine = HyenaEngine()
+        try engine.scan(path: path)
     }
 }
