@@ -10,6 +10,9 @@ public struct HyenaSignalEngine {
         let deadFiles = findDeadFiles(in: graphs.fileDependencyGraph)
         signals.append(contentsOf: deadFiles)
 
+        let circularDeps = findCircularDependencies(in: graphs.fileDependencyGraph)
+        signals.append(contentsOf: circularDeps)
+
         return SignalResult(signals: signals)
     }
 
@@ -37,6 +40,22 @@ public struct HyenaSignalEngine {
         }
 
         return signals
+    }
+
+    private func findCircularDependencies(in graph: FileDependencyGraph) -> [Signal] {
+        let cycles = graph.findCycles()
+
+        return cycles.map { cycle in
+            let fileNames = cycle.map { ($0 as NSString).lastPathComponent }
+            let cycleDescription = fileNames.joined(separator: " → ")
+
+            return Signal(
+                name: "circular-dependency",
+                severity: .error,
+                message: "Circular dependency detected: \(cycleDescription)",
+                file: cycle.first
+            )
+        }
     }
 }
 

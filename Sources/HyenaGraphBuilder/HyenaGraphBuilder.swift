@@ -80,6 +80,45 @@ public struct FileDependencyGraph {
     public func outgoingEdges(for path: String) -> [FileEdge] {
         edges.filter { $0.from == path }
     }
+
+    public func findCycles() -> [[String]] {
+        var visited: Set<String> = []
+        var recursionStack: Set<String> = []
+        var cycles: [[String]] = []
+        var currentPath: [String] = []
+
+        let moduleToPath = Dictionary(uniqueKeysWithValues: nodes.map { ($0.moduleName, $0.path) })
+
+        func dfs(_ path: String) {
+            visited.insert(path)
+            recursionStack.insert(path)
+            currentPath.append(path)
+
+            for edge in outgoingEdges(for: path) {
+                if let targetPath = moduleToPath[edge.to] {
+                    if !visited.contains(targetPath) {
+                        dfs(targetPath)
+                    } else if recursionStack.contains(targetPath) {
+                        if let cycleStart = currentPath.firstIndex(of: targetPath) {
+                            let cycle = Array(currentPath[cycleStart...]) + [targetPath]
+                            cycles.append(cycle)
+                        }
+                    }
+                }
+            }
+
+            currentPath.removeLast()
+            recursionStack.remove(path)
+        }
+
+        for node in nodes {
+            if !visited.contains(node.path) {
+                dfs(node.path)
+            }
+        }
+
+        return cycles
+    }
 }
 
 public struct FileNode {
