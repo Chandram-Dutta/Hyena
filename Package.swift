@@ -37,6 +37,8 @@ let package = Package(
         .target(
             name: "HyenaReporters",
             dependencies: [
+                "HyenaIRStore",
+                "HyenaGraphBuilder",
                 "HyenaSignalEngine"
             ]
         ),

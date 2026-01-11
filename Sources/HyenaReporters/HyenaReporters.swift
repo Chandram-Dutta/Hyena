@@ -1,8 +1,13 @@
 import Foundation
+import HyenaGraphBuilder
 import HyenaIRStore
 import HyenaSignalEngine
 
 public struct HyenaReporters {
+    private let jsonExporter = JSONExporter()
+    private let dotExporter = DOTExporter()
+    private let mermaidExporter = MermaidExporter()
+    
     public init() {}
 
     public func reportImports(_ fileImports: [FileImports]) {
@@ -12,7 +17,7 @@ public struct HyenaReporters {
             if file.imports.isEmpty {
                 print("\(fileName) → (none)")
             } else {
-                print("\(fileName) → \(file.imports.joined(separator: ", "))")
+                print("\(fileName) → \(file.moduleNames.joined(separator: ", "))")
             }
         }
         print("")
@@ -44,6 +49,55 @@ public struct HyenaReporters {
         case .info: return "ℹ️"
         case .warning: return "⚠️"
         case .error: return "❌"
+        }
+    }
+    
+    public func export(
+        ir: IRStore,
+        graphs: GraphResult,
+        signals: SignalResult,
+        format: ExportFormat
+    ) -> ExportResult {
+        switch format {
+        case .json:
+            return jsonExporter.export(ir: ir, graphs: graphs, signals: signals)
+        case .dot:
+            return dotExporter.export(ir: ir, graphs: graphs, signals: signals)
+        case .mermaid:
+            return mermaidExporter.export(ir: ir, graphs: graphs, signals: signals)
+        }
+    }
+    
+    public func exportFileDependencyGraph(_ graph: FileDependencyGraph, format: ExportFormat) -> String {
+        switch format {
+        case .json:
+            return "{}"
+        case .dot:
+            return dotExporter.exportFileDependencyOnly(graph)
+        case .mermaid:
+            return mermaidExporter.exportFileDependencyOnly(graph)
+        }
+    }
+    
+    public func exportInheritanceGraph(_ graph: InheritanceGraph, format: ExportFormat) -> String {
+        switch format {
+        case .json:
+            return "{}"
+        case .dot:
+            return dotExporter.exportInheritanceOnly(graph)
+        case .mermaid:
+            return mermaidExporter.exportInheritanceOnly(graph)
+        }
+    }
+    
+    public func exportCallGraph(_ graph: CallGraph, format: ExportFormat) -> String {
+        switch format {
+        case .json:
+            return "{}"
+        case .dot:
+            return dotExporter.exportCallGraphOnly(graph)
+        case .mermaid:
+            return mermaidExporter.exportCallGraphOnly(graph)
         }
     }
 }

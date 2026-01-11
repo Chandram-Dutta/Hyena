@@ -4,49 +4,74 @@ import Foundation
 
 /// The main storage container for the Intermediate Representation
 /// This holds all parsed files, symbols, and relations before graph construction
-public struct IRStore {
+public struct IRStore: Sendable {
     public let files: [FileEntity]
     public let symbols: [SymbolEntity]
     public let relations: [RelationEntity]
     public let fileImports: [FileImports]
+    public let typeDeclarations: [TypeDeclaration]
+    public let functionDeclarations: [FunctionDeclaration]
+    public let callSites: [CallSite]
 
     public init(
         files: [FileEntity] = [],
         symbols: [SymbolEntity] = [],
         relations: [RelationEntity] = [],
-        fileImports: [FileImports] = []
+        fileImports: [FileImports] = [],
+        typeDeclarations: [TypeDeclaration] = [],
+        functionDeclarations: [FunctionDeclaration] = [],
+        callSites: [CallSite] = []
     ) {
         self.files = files
         self.symbols = symbols
         self.relations = relations
         self.fileImports = fileImports
+        self.typeDeclarations = typeDeclarations
+        self.functionDeclarations = functionDeclarations
+        self.callSites = callSites
     }
 
     public var stats: IRStats {
         IRStats(
             fileCount: files.count,
             symbolCount: symbols.count,
-            relationCount: relations.count
+            relationCount: relations.count,
+            typeCount: typeDeclarations.count,
+            functionCount: functionDeclarations.count,
+            callSiteCount: callSites.count
         )
     }
 }
 
-public struct IRStats {
+public struct IRStats: Sendable {
     public let fileCount: Int
     public let symbolCount: Int
     public let relationCount: Int
+    public let typeCount: Int
+    public let functionCount: Int
+    public let callSiteCount: Int
 
-    public init(fileCount: Int, symbolCount: Int, relationCount: Int) {
+    public init(
+        fileCount: Int,
+        symbolCount: Int,
+        relationCount: Int,
+        typeCount: Int = 0,
+        functionCount: Int = 0,
+        callSiteCount: Int = 0
+    ) {
         self.fileCount = fileCount
         self.symbolCount = symbolCount
         self.relationCount = relationCount
+        self.typeCount = typeCount
+        self.functionCount = functionCount
+        self.callSiteCount = callSiteCount
     }
 }
 
 // MARK: - File Entity
 
 /// Represents a source file in the codebase
-public struct FileEntity {
+public struct FileEntity: Sendable {
     public let id: FileID
     public let path: String
     public let language: Language
@@ -82,7 +107,7 @@ public struct FileID: Hashable, Codable, Sendable {
     }
 }
 
-public struct FileMetadata {
+public struct FileMetadata: Sendable {
     public let lastModified: Date?
     public let encoding: String
     public let hash: String?
@@ -101,7 +126,7 @@ public struct FileMetadata {
 // MARK: - Symbol Entity
 
 /// Represents a code symbol (class, function, variable, etc.)
-public struct SymbolEntity {
+public struct SymbolEntity: Sendable {
     public let id: SymbolID
     public let name: String
     public let kind: SymbolKind
@@ -143,7 +168,7 @@ public struct SymbolID: Hashable, Codable, Sendable {
     }
 }
 
-public enum SymbolKind: String, Codable {
+public enum SymbolKind: String, Codable, Sendable {
     case `class`
     case `struct`
     case `enum`
@@ -161,19 +186,20 @@ public enum SymbolKind: String, Codable {
     case macro
     case module
     case namespace
+    case actor
     case unknown
 }
 
-public enum Accessibility: String, Codable {
+public enum Accessibility: String, Codable, Sendable {
     case `public`
     case `internal`
     case `private`
     case `fileprivate`
     case `open`
-    case packagePublic = "package"
+    case package
 }
 
-public struct SourceLocation {
+public struct SourceLocation: Sendable {
     public let fileID: FileID
     public let line: Int
     public let column: Int
@@ -195,7 +221,7 @@ public struct SourceLocation {
     }
 }
 
-public struct SymbolMetadata {
+public struct SymbolMetadata: Sendable {
     public let isGeneric: Bool
     public let isAsync: Bool
     public let isThrows: Bool
@@ -226,7 +252,7 @@ public struct SymbolMetadata {
 // MARK: - Relation Entity
 
 /// Represents a relationship between symbols
-public struct RelationEntity {
+public struct RelationEntity: Sendable {
     public let id: RelationID
     public let source: SymbolID
     public let target: SymbolID
@@ -259,7 +285,7 @@ public struct RelationID: Hashable, Codable, Sendable {
     }
 }
 
-public enum RelationKind: String, Codable {
+public enum RelationKind: String, Codable, Sendable {
     // Type relationships
     case inherits
     case conforms
@@ -288,7 +314,7 @@ public enum RelationKind: String, Codable {
     case unknown
 }
 
-public struct RelationMetadata {
+public struct RelationMetadata: Sendable {
     public let isConditional: Bool
     public let isOptional: Bool
     public let isDirect: Bool
@@ -309,7 +335,7 @@ public struct RelationMetadata {
 
 // MARK: - Language
 
-public enum Language: String, Codable {
+public enum Language: String, Codable, Sendable {
     case swift
     case objectiveC = "objective-c"
     case c
@@ -324,15 +350,189 @@ public enum Language: String, Codable {
     case unknown
 }
 
-// MARK: - File Imports (Phase 2 vertical slice)
+// MARK: - File Imports
 
 public struct FileImports: Sendable {
     public let path: String
-    public let imports: [String]
+    public let imports: [ImportInfo]
 
-    public init(path: String, imports: [String]) {
+    public init(path: String, imports: [ImportInfo]) {
         self.path = path
         self.imports = imports
+    }
+
+    public var moduleNames: [String] {
+        imports.map { $0.moduleName }
+    }
+}
+
+public struct ImportInfo: Sendable, Equatable {
+    public let moduleName: String
+    public let isTestable: Bool
+    public let line: Int
+
+    public init(moduleName: String, isTestable: Bool = false, line: Int = 0) {
+        self.moduleName = moduleName
+        self.isTestable = isTestable
+        self.line = line
+    }
+}
+
+// MARK: - Type Declaration
+
+public struct TypeDeclaration: Sendable {
+    public let id: TypeID
+    public let name: String
+    public let kind: TypeDeclKind
+    public let filePath: String
+    public let inheritedTypes: [String]
+    public let accessibility: Accessibility
+    public let line: Int
+    public let endLine: Int
+    public let attributes: [String]
+    public let genericParameters: [String]
+
+    public init(
+        id: TypeID,
+        name: String,
+        kind: TypeDeclKind,
+        filePath: String,
+        inheritedTypes: [String] = [],
+        accessibility: Accessibility = .internal,
+        line: Int = 0,
+        endLine: Int = 0,
+        attributes: [String] = [],
+        genericParameters: [String] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.filePath = filePath
+        self.inheritedTypes = inheritedTypes
+        self.accessibility = accessibility
+        self.line = line
+        self.endLine = endLine
+        self.attributes = attributes
+        self.genericParameters = genericParameters
+    }
+}
+
+public struct TypeID: Hashable, Codable, Sendable {
+    public let value: String
+
+    public init(_ value: String) {
+        self.value = value
+    }
+}
+
+public enum TypeDeclKind: String, Codable, Sendable {
+    case `struct`
+    case `class`
+    case `enum`
+    case `protocol`
+    case actor
+}
+
+// MARK: - Function Declaration
+
+public struct FunctionDeclaration: Sendable {
+    public let id: FunctionID
+    public let name: String
+    public let signature: String
+    public let filePath: String
+    public let parameters: [ParameterInfo]
+    public let returnType: String?
+    public let accessibility: Accessibility
+    public let isStatic: Bool
+    public let isAsync: Bool
+    public let isThrows: Bool
+    public let isMutating: Bool
+    public let line: Int
+    public let endLine: Int
+    public let containingType: String?
+
+    public init(
+        id: FunctionID,
+        name: String,
+        signature: String,
+        filePath: String,
+        parameters: [ParameterInfo] = [],
+        returnType: String? = nil,
+        accessibility: Accessibility = .internal,
+        isStatic: Bool = false,
+        isAsync: Bool = false,
+        isThrows: Bool = false,
+        isMutating: Bool = false,
+        line: Int = 0,
+        endLine: Int = 0,
+        containingType: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.signature = signature
+        self.filePath = filePath
+        self.parameters = parameters
+        self.returnType = returnType
+        self.accessibility = accessibility
+        self.isStatic = isStatic
+        self.isAsync = isAsync
+        self.isThrows = isThrows
+        self.isMutating = isMutating
+        self.line = line
+        self.endLine = endLine
+        self.containingType = containingType
+    }
+}
+
+public struct FunctionID: Hashable, Codable, Sendable {
+    public let value: String
+
+    public init(_ value: String) {
+        self.value = value
+    }
+}
+
+public struct ParameterInfo: Sendable, Equatable {
+    public let label: String?
+    public let name: String
+    public let type: String
+
+    public init(label: String?, name: String, type: String) {
+        self.label = label
+        self.name = name
+        self.type = type
+    }
+}
+
+// MARK: - Call Site
+
+public struct CallSite: Sendable {
+    public let id: CallSiteID
+    public let calledName: String
+    public let filePath: String
+    public let line: Int
+    public let containingFunction: String?
+
+    public init(
+        id: CallSiteID,
+        calledName: String,
+        filePath: String,
+        line: Int,
+        containingFunction: String? = nil
+    ) {
+        self.id = id
+        self.calledName = calledName
+        self.filePath = filePath
+        self.line = line
+        self.containingFunction = containingFunction
+    }
+}
+
+public struct CallSiteID: Hashable, Codable, Sendable {
+    public let value: String
+
+    public init(_ value: String) {
+        self.value = value
     }
 }
 
@@ -342,8 +542,26 @@ public struct FileImports: Sendable {
 public struct HyenaIRStore {
     public init() {}
 
+    /// Build IRStore from parsed file data
+    public func buildIRStore(
+        fileImports: [FileImports],
+        typeDeclarations: [TypeDeclaration],
+        functionDeclarations: [FunctionDeclaration],
+        callSites: [CallSite]
+    ) -> IRStore {
+        IRStore(
+            files: [],
+            symbols: [],
+            relations: [],
+            fileImports: fileImports,
+            typeDeclarations: typeDeclarations,
+            functionDeclarations: functionDeclarations,
+            callSites: callSites
+        )
+    }
+
     public func buildFileImports(files: [(path: String, imports: [String])]) -> [FileImports] {
-        files.map { FileImports(path: $0.path, imports: $0.imports) }
+        files.map { FileImports(path: $0.path, imports: $0.imports.map { ImportInfo(moduleName: $0) }) }
     }
 
     /// Build IR from parsed files

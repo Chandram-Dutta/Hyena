@@ -25,6 +25,20 @@ public struct HyenaSignalEngine {
         let deepChains = findDeepChains(in: graphs.fileDependencyGraph)
         signals.append(contentsOf: deepChains)
 
+        // Inheritance graph signals
+        let deepHierarchies = findDeepHierarchies(in: graphs.inheritanceGraph)
+        signals.append(contentsOf: deepHierarchies)
+
+        let wideProtocols = findWideProtocols(in: graphs.inheritanceGraph)
+        signals.append(contentsOf: wideProtocols)
+
+        // Call graph signals
+        let hotFunctions = findHotFunctions(in: graphs.callGraph)
+        signals.append(contentsOf: hotFunctions)
+
+        let unusedFunctions = findUnusedFunctions(in: graphs.callGraph)
+        signals.append(contentsOf: unusedFunctions)
+
         return SignalResult(signals: signals)
     }
 
@@ -204,6 +218,76 @@ public struct HyenaSignalEngine {
         let depth = maxChildDepth + 1
         memo[path] = depth
         return depth
+    }
+
+    // MARK: - Inheritance Graph Signals
+
+    private func findDeepHierarchies(in graph: InheritanceGraph, threshold: Int = 3) -> [Signal] {
+        let deepTypes = graph.findDeepHierarchies(threshold: threshold)
+        return deepTypes.map { typeName, depth in
+            let node = graph.nodes.first { $0.name == typeName }
+            let severity: Severity = depth >= 5 ? .error : .warning
+            return Signal(
+                name: "deep-hierarchy",
+                severity: severity,
+                message: "Type '\(typeName)' has inheritance depth of \(depth) - consider composition",
+                file: node?.filePath
+            )
+        }
+    }
+
+    private func findWideProtocols(in graph: InheritanceGraph, threshold: Int = 5) -> [Signal] {
+        var signals: [Signal] = []
+        let protocols = graph.nodes.filter { $0.kind == .protocol }
+
+        for proto in protocols {
+            let conformers = graph.subtypes(of: proto.name)
+            if conformers.count >= threshold {
+                let severity: Severity = conformers.count >= 10 ? .error : .warning
+                signals.append(Signal(
+                    name: "wide-protocol",
+                    severity: severity,
+                    message: "Protocol '\(proto.name)' has \(conformers.count) conformers - high coupling",
+                    file: proto.filePath
+                ))
+            }
+        }
+        return signals
+    }
+
+    // MARK: - Call Graph Signals
+
+    private func findHotFunctions(in graph: CallGraph, threshold: Int = 5) -> [Signal] {
+        let hotFns = graph.findHotFunctions(threshold: threshold)
+        return hotFns.map { name, callCount in
+            let node = graph.nodes.first { $0.name == name }
+            let severity: Severity = callCount >= 10 ? .error : .warning
+            return Signal(
+                name: "hot-function",
+                severity: severity,
+                message: "Function '\(name)' is called \(callCount) times - potential bottleneck",
+                file: node?.filePath
+            )
+        }
+    }
+
+    private func findUnusedFunctions(in graph: CallGraph) -> [Signal] {
+        let unused = graph.findUnusedFunctions()
+        let ignoredNames: Set<String> = [
+            "main", "visit", "visitPost", "run", "hash", "encode", "decode"
+        ]
+        let ignoredPrefixes = ["init", "test", "setUp", "tearDown"]
+        
+        return unused.compactMap { fn in
+            if ignoredNames.contains(fn.name) { return nil }
+            if ignoredPrefixes.contains(where: { fn.name.hasPrefix($0) }) { return nil }
+            return Signal(
+                name: "unused-function",
+                severity: .info,
+                message: "Function '\(fn.name)' is never called internally",
+                file: fn.filePath
+            )
+        }
     }
 }
 
