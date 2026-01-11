@@ -1,6 +1,10 @@
 # Hyena
 
+![Hyena Logo](HyenaLogo.png)
+
 Hyena is a static analysis engine for Swift codebases that parses source code into an Intermediate Representation (IR), constructs dependency graphs, and performs various architectural analyses.
+
+
 
 ## Features
 
