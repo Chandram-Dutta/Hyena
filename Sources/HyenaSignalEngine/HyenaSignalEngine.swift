@@ -39,6 +39,22 @@ public struct HyenaSignalEngine {
         let unusedFunctions = findUnusedFunctions(in: graphs.callGraph)
         signals.append(contentsOf: unusedFunctions)
 
+        // Package metrics
+        let unstableFiles = findUnstableFiles(in: graphs.fileDependencyGraph)
+        signals.append(contentsOf: unstableFiles)
+
+        let abstractnessSignals = findLowAbstractness(
+            in: graphs.fileDependencyGraph,
+            types: graphs.inheritanceGraph
+        )
+        signals.append(contentsOf: abstractnessSignals)
+
+        let distanceSignals = findDistanceFromMainSequence(
+            in: graphs.fileDependencyGraph,
+            types: graphs.inheritanceGraph
+        )
+        signals.append(contentsOf: distanceSignals)
+
         return SignalResult(signals: signals)
     }
 
@@ -288,6 +304,100 @@ public struct HyenaSignalEngine {
                 file: fn.filePath
             )
         }
+    }
+
+    // MARK: - Package Metrics
+
+    private func findUnstableFiles(in graph: FileDependencyGraph, threshold: Double = 0.8) -> [Signal] {
+        var signals: [Signal] = []
+
+        for node in graph.nodes {
+            let afferent = graph.incomingEdges(for: node.path).count
+            let efferent = graph.outgoingEdges(for: node.path).count
+            let total = afferent + efferent
+
+            guard total > 0 else { continue }
+
+            let instability = Double(efferent) / Double(total)
+            if instability >= threshold && efferent >= 3 {
+                let severity: Severity = instability >= 0.9 ? .warning : .info
+                signals.append(Signal(
+                    name: "high-instability",
+                    severity: severity,
+                    message: String(format: "File has instability index of %.2f - highly dependent on others", instability),
+                    file: node.path
+                ))
+            }
+        }
+        return signals
+    }
+
+    private func findLowAbstractness(
+        in graph: FileDependencyGraph,
+        types: InheritanceGraph,
+        threshold: Double = 0.1
+    ) -> [Signal] {
+        var signals: [Signal] = []
+        let typesByFile = Dictionary(grouping: types.nodes) { $0.filePath }
+
+        for node in graph.nodes {
+            let fileTypes = typesByFile[node.path] ?? []
+            guard fileTypes.count >= 3 else { continue }
+
+            let abstractCount = fileTypes.filter { $0.kind == .protocol }.count
+            let abstractness = Double(abstractCount) / Double(fileTypes.count)
+
+            let afferent = graph.incomingEdges(for: node.path).count
+            if abstractness <= threshold && afferent >= 3 {
+                signals.append(Signal(
+                    name: "low-abstractness",
+                    severity: .info,
+                    message: String(format: "File has abstractness of %.2f with %d dependents - consider adding protocols", abstractness, afferent),
+                    file: node.path
+                ))
+            }
+        }
+        return signals
+    }
+
+    private func findDistanceFromMainSequence(
+        in graph: FileDependencyGraph,
+        types: InheritanceGraph,
+        threshold: Double = 0.7
+    ) -> [Signal] {
+        var signals: [Signal] = []
+        let typesByFile = Dictionary(grouping: types.nodes) { $0.filePath }
+
+        for node in graph.nodes {
+            let afferent = graph.incomingEdges(for: node.path).count
+            let efferent = graph.outgoingEdges(for: node.path).count
+            let total = afferent + efferent
+
+            guard total > 0 else { continue }
+
+            let instability = Double(efferent) / Double(total)
+
+            let fileTypes = typesByFile[node.path] ?? []
+            let abstractness: Double
+            if fileTypes.isEmpty {
+                abstractness = 0
+            } else {
+                let abstractCount = fileTypes.filter { $0.kind == .protocol }.count
+                abstractness = Double(abstractCount) / Double(fileTypes.count)
+            }
+
+            let distance = abs(abstractness + instability - 1.0)
+            if distance >= threshold && total >= 3 {
+                let severity: Severity = distance >= 0.9 ? .warning : .info
+                signals.append(Signal(
+                    name: "distance-from-main-sequence",
+                    severity: severity,
+                    message: String(format: "File has D=%.2f (A=%.2f, I=%.2f) - in zone of pain or uselessness", distance, abstractness, instability),
+                    file: node.path
+                ))
+            }
+        }
+        return signals
     }
 }
 
